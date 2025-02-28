@@ -189,6 +189,8 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
             # Crop the image using numpy slicing
             cropped_image = image_source[int(y)-expanded:int(y+h)+expanded, int(x)-expanded:int(x+w)+expanded]
             
+            # neede save expanded 
+            #[int(y)-expanded:int(y+h)+expanded, int(x)-expanded:int(x+w)+expanded]
 #             print (binary_mask.shape)
 #             print (image_source.shape)
             
