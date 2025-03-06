@@ -383,21 +383,37 @@ def generate_segmentation(args):
         print(data_json)
         label = data_json['object_annotations'][0]['label']
         ###########
-        image_sources, main_images, gt_images, dice_lists, box_lists, roi_mask_lists, local_image_paths, label_box_list, overlay_box_list = sam.sementation_call(data_json, args.data_path)
+        image_sources, main_images, gt_images, dice_lists, box_lists, roi_mask_lists, local_image_paths, label_box_list, gt_box_list = sam.sementation_call(data_json, args.data_path)
         
         
         
-        for box_roi, dice_result, label_box, overlay_box in zip(box_lists[0],dice_lists[0],label_box_list, overlay_box_list):
-            
+        for box_roi, dice_result, label_box, overlay_box, gt_box in zip(box_lists[0],dice_lists[0],label_box_list, roi_mask_lists[0], gt_box_list):
+#             print ('box------')
+#             print(overlay_box)
             save_folder = local_image_paths[0].split("/")[-1].split(".")[0]
             if not os.path.exists(sam_box_dir+save_folder):
                 # Create the directory
                 os.makedirs(sam_box_dir+save_folder)
             
             box_final_path = sam_box_dir+save_folder+"/"+label_box+'_'+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
-            cv2.imwrite(box_final_path, overlay_box)
+            gt_final_path = sam_box_dir+save_folder+"/"+label_box+'_'+datetime.now().strftime('%Y%m%d%H%M%S%f')+"_gt.jpg"
             
-            new_row = {"image_path": local_image_paths[0], "class": label_box, "roi": box_roi, "dice": dice_result, "path":box_final_path}
+            try:
+                cv2.imwrite(box_final_path, overlay_box)
+                cv2.imwrite(gt_final_path, gt_box)
+                
+                
+            except:
+                # Convert boolean mask to uint8 (0s and 255s)
+                binary_mask = np.uint8(overlay_box) * 255
+                binary_gt_mask = np.uint8(gt_box) * 255
+
+                # Save the binary mask as an image
+                cv2.imwrite(box_final_path, binary_mask)
+                cv2.imwrite(gt_final_path, binary_gt_mask)
+                
+                
+            new_row = {"image_path": local_image_paths[0], "class": label_box, "roi": box_roi, "dice": dice_result, "path":box_final_path, "gt_path":gt_final_path}
             df = df.append(new_row, ignore_index=True)
                 
         image_name = data_json['image'][0].split("/")[-1]

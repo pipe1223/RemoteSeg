@@ -122,6 +122,7 @@ def dice_coefficient(mask1, mask2):
     return dice
 
 # Perform segmentation on the image based on ROIs and optional ground truth masks
+#working on this one
 def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, dice_cal=True, segmentation_poly="", 
                          label_list = "", visualization=True, show_box=True, show_text=False, crop =[]):
     #load image
@@ -149,6 +150,7 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
     dice_list = []
     roi_mask_list = []
     overlay_box_list = []
+    gt_box_list = []
     # Iterate over the ROI list and crop the image
     for indexing, (x, y, w, h) in enumerate((roi_list)):
         try:
@@ -188,7 +190,7 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
     
             # Crop the image using numpy slicing
             cropped_image = image_source[int(y)-expanded:int(y+h)+expanded, int(x)-expanded:int(x+w)+expanded]
-            
+            box_list[indexing] = [int(x)-expanded, int(y)-expanded, int(x+w)+expanded, int(y+h)+expanded]
             # neede save expanded 
             #[int(y)-expanded:int(y+h)+expanded, int(x)-expanded:int(x+w)+expanded]
 #             print (binary_mask.shape)
@@ -208,6 +210,7 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
             except:
                 expanded = 0
                 cropped_image = image_source[int(y)-expanded:int(y+h)+expanded, int(x)-expanded:int(x+w)+expanded]
+                box_list[indexing] = [int(x)-expanded, int(y)-expanded, int(x+w)+expanded, int(y+h)+expanded]
                 sam_predictor.set_image(cropped_image)
                 
                 if segmentation_poly!="":
@@ -237,8 +240,9 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
     
     
             roi_mask = masks[0]
-            roi_mask_list = masks
-    
+            roi_mask_list.append(roi_mask)
+            
+            
     
             #calcualate dice
             dice = ''
@@ -246,15 +250,20 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
                 try:
                     cropped_gt = cropped_gt.squeeze(axis=-1)
                     dice = dice_coefficient(roi_mask, cropped_gt)
+                    
+                    gt_box_list.append(cropped_gt)
                 except:
                     try:
                         dice = dice_coefficient(roi_mask, cropped_gt)
+                        gt_box_list.append(cropped_gt)
                     except:
                         #make an error
                         dice = dice_coefficient(roi_mask, cropped_gt)
+                        gt_box_list.append(cropped_gt)
                         dice = 0
                 dice_list.append(dice)
-    
+            
+            
             if visualization:
                 #visualize overall
                 over_y = int(y)-expanded
@@ -288,7 +297,6 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
 #                 plt.imshow(cropped_image)
 #                 plt.show()
                 overlay_box_list.append(cropped_image)
-                
                 #GT mask visualization
                 if segmentation_poly!="":
                     for i in range(over_h):
@@ -345,7 +353,7 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
 #         plt.imshow(gt_image)
 #         plt.title("GT")
 
-    return image_source, main_image, gt_image, dice_list, box_list, roi_mask_list, overlay_box_list
+    return image_source, main_image, gt_image, dice_list, box_list, roi_mask_list, gt_box_list
 
 # Process multiple images and annotations from a JSON file
 def SAM_segmentatio_json(sam_predictor, data_list, dataset_path):
