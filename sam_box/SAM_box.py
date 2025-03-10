@@ -131,7 +131,12 @@ def perform_segmentation(predictor, image_path, box_list, expanded_rate=0.15, di
     
     if crop!=[]:
         image = image[crop[1]:crop[3], crop[0]:crop[2]]
-    image_source = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    try:
+        image_source = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    except:
+        print (image)
+        image_source = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     H, W, _ = image_source.shape
     
     #set image
