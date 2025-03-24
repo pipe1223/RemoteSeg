@@ -378,79 +378,62 @@ def generate_segmentation(args):
     
     sam_box_dir = "/home/datadisk/pipe/results/sam_box/"+dataset_name+"/"+file_testing_name+"/"
     
-    visualiztion = False
-    
-    dice_small_list = []
-    dice_sam_list = []
-    dice_sam_combine_list = []
-    
-    image_path_list = []
-    mask_gt_list = []
-    mask_small_list = []
-    mask_sam_list = []
-    mask_sam_combine_list = []
-    
-        
-    columns = ["image_path", "class", "dice_small", "dice_sam","dice_sam_com", "small_path", "sam_path", "sam_combine_path", "gt_path"]
-    # Create an empty DataFrame with the specified columns
-    save_df = pd.DataFrame(columns=columns)
-    
-    dataset_name = 'tester_road'
-    file_testing_name = 'tester_road'
-    sam_road_dir = "/home/datadisk/pipe/results/sam_road/"+dataset_name+"/"+file_testing_name+"/"
-    
     for data_json in data_jsons:
         ##NEED remove
+        print(data_json)
+        label = data_json['object_annotations'][0]['label']
+        ###########
+        image_sources, main_images, gt_images, dice_lists, box_lists, roi_mask_lists, local_image_paths, label_box_list, overlay_box_list = sam.sementation_call(data_json, args.data_path)
         
-        image_path = open_image_with_nothing(data_json['image'][0])
-        image_source = cv2.imread(image_path)
-        H, W, _ = image_source.shape
         
         
-        mask_segment_list = []
-        for raod_obj in data_json["object_annotations"]:
-            if visualiztion:
-                print ("------------DATA-----------")
-                print (raod_obj)
+        for box_roi, dice_result, label_box, overlay_box in zip(box_lists[0],dice_lists[0],label_box_list, overlay_box_list):
             
-            segmentation_poly = raod_obj["segmentation"]
-            if segmentation_poly!="":
-                polygon = segmentation_poly
-                if isinstance(polygon, list):
-#                     print ('list poly')
-                    binary_mask = polygon_to_mask(polygon, H, W)
-                    
-                elif type(polygon) == str:
-#                     print ('str poly')
-                    binary_mask = str_poly_to_mask(polygon, H, W)
+            save_folder = local_image_paths[0].split("/")[-1].split(".")[0]
+            if not os.path.exists(sam_box_dir+save_folder):
+                # Create the directory
+                os.makedirs(sam_box_dir+save_folder)
+            
+            box_final_path = sam_box_dir+save_folder+"/"+label_box+'_'+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
+            cv2.imwrite(box_final_path, overlay_box)
+            
+            new_row = {"image_path": local_image_paths[0], "class": label_box, "roi": box_roi, "dice": dice_result, "path":box_final_path}
+            df = df.append(new_row, ignore_index=True)
+                
+        image_name = data_json['image'][0].split("/")[-1]
+        cv2.imwrite('/home/kt/segment_tmp/'+label+'_'+image_name,main_images[0])
 
-                else:
-                    print('print error nothing')
-            mask_segment_list.append(binary_mask)
-        
-        #merge mask
-        
-        binary_mask = mask_segment_list[0]
-        for segment_mask in mask_segment_list:
-            binary_mask = np.logical_or(binary_mask, segment_mask)
-        
-        
-        if visualiztion:
-            print ("-------MASK----------")
-            plt.imshow(binary_mask)
-            plt.show()
-        try:
-            if (True):
+
+        #print(roi_mask_lists)
+        for image_source, main_image, local_image_path in zip(image_sources,main_images, local_image_paths):
+
+            image_sourceCopy = image_source.copy()
+            original_height, original_width = image_source.shape[:2]
+            if original_height <256 or original_width <256:
+                new_height = 256
+                new_width = 256
+
+                # Resize the image
+                resized_image = cv2.resize(image_source, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                image_source = resized_image
+#             print ("image shape: ",image_source.shape)
+
+
+
+#             plt.imshow(main_image)
+#             plt.show()
+
+            ##ALL about road
+            if (False):
                 #road #1
                 multi_scales = [1,2,3,4]
                 scale_results = []
                 scale_results_small = []
-                scale_result_mask_small = []
                 for scale in multi_scales:
                     #print ("scale:", scale)
                     padded_image = resize_to_square_and_pad(image_source, scale)
-    #                 plt.imshow(padded_image)
-    #                 plt.show()
+                    plt.imshow(padded_image)
+                    plt.show()
                     pred_nodes_spacenet, pred_edges_spacenet, itsc_mask_spacenet, road_mask_spacenet = sam_road.infer_one_img(net_spacenet, padded_image, config_spacenet)
 
 
@@ -469,174 +452,55 @@ def generate_segmentation(args):
                     mask, blended_image = road_ex.road_extraction_image(padded_image)
 
                     final_scale_result = remove_padding_and_resize(blended_image, img.shape)
-                    #small_scale_result = remove_padding_and_resize(mask, image_source.shape)
                     scale_results_small.append(final_scale_result)
-                    #scale_result_mask_small.append(small_scale_result)
         #             plt.imshow(final_scale_result)
         #             plt.show()
 
                 #combined_mask = combine_multiscale_results(scale_results, main_image.shape[:2], method='average')
+                combined_mask = combine_multiscale_results(scale_results,multi_scales, main_image.shape[:2], method='average')
+                combined_mask_small = combine_multiscale_results(scale_results_small,multi_scales, (1024,1024,3), method='average')
+                overlay_image = sam_road.overlay_mask_on_image(main_image, combined_mask, color=(0, 255, 255), alpha=0.2,th=25)
 
-                image_sourceCopy = image_source.copy()
-                combined_mask = combine_multiscale_results(scale_results,multi_scales, image_sourceCopy.shape[:2], method='average')
-                combined_real_small = combine_multiscale_results(scale_results_small,multi_scales, (1024,1024,3), method='average')
-                #combined_mask_small = combine_multiscale_results(scale_result_mask_small,multi_scales, (1024,1024,3), method='average')
-                overlay_image = sam_road.overlay_mask_on_image(image_sourceCopy, combined_mask, color=(0, 255, 255), alpha=0.2,th=25)
-
-                if visualiztion:
-
-                    print ("-------Original----------")
-                    plt.imshow(image_source)
-                    plt.show()
-
-                    plt.imshow(overlay_image)
-                    plt.show()
+                plt.imshow(overlay_image)
+                plt.show()
 
                 threshold = 25
-                sam_combine_mask = (combined_mask > threshold).astype(int)
-                if visualiztion:
-                    print ('Sam(combine) TH:',threshold)
-                
-                ### SAVE Sam(combine) result mask
 
+                binary_mask = (combined_mask > threshold).astype(int)
 
-                
-                ### END
-                
-                dice_sam_com = dice_coefficient(sam_combine_mask, binary_mask)
-                dice_sam_combine_list.append(dice_sam_com)
-                if visualiztion:
-                    print ('DICE:',dice_sam_com)
-                    plt.imshow(sam_combine_mask)
-                    plt.show()      
+        #         sub_mask = create_sub_masks(binary_mask,binary_mask.shape[1],binary_mask.shape[0])
+        #         print (sub_mask)
+                polygons, segmentations = create_sub_mask_annotation(binary_mask)
 
-                image_sourceCopy = image_source.copy()
-                if visualiztion:
-                    print ('SAM(single) TH: 15')
+                #print (segmentations)
+                
+                print ('Sam TH:',threshold)
+                plt.imshow(binary_mask)
+                plt.show()      
+                
+                
+                print ('sam')
                 try:
-
-                    h, w = image_sourceCopy.shape[:2]
-                    if w != h:
-                        new_size = max(w, h)  # Choose the larger dimension to maintain aspect ratio
-                        image_sourceCopy = cv2.resize(image_sourceCopy, (new_size, new_size))
-
                     pred_nodes_spacenet, pred_edges_spacenet, itsc_mask_spacenet, road_mask_spacenet = sam_road.infer_one_img(net_spacenet, image_sourceCopy, config_spacenet)
                     overlay_image = sam_road.overlay_mask_on_image(image_sourceCopy, road_mask_spacenet, color=(0, 255, 0), alpha=0.5,th=15)
-
-                    road_mask_spacenet= np.resize(road_mask_spacenet, binary_mask.shape)
-                    
-                    ### SAVE SAM result mask
-                    
-                    
-                    
-                    ### END
-                    
-                    
-                    dice_SAM = dice_coefficient(road_mask_spacenet, binary_mask)
-                    if visualiztion:
-                        print ('DICE:',dice_SAM)
-
-                        plt.imshow(overlay_image)
-                        plt.show()
+                    plt.imshow(overlay_image)
+                    plt.show()
                 except:
-
-
-
                     print ('Error size need resize')
-
-    #             print ('small model (combine)')
-    #             dice = dice_coefficient(combined_mask_small, binary_mask)
-    #             print ('DICE:',dice)
-    #             plt.imshow(combined_mask_small)
-    #             plt.show()
+                
+                print ('combined_mask_small combine')
+                plt.imshow(combined_mask_small)
+                plt.show()
 
 
                 #road #2
-
-                print ('small model (single)')
-                mask, blended_image = road_ex.road_extraction(image_path)
-                mask= np.resize(mask, binary_mask.shape)
-
-                print ('mask', mask.shape)
-                print ('binary', binary_mask.shape)
-                
-                ### SAVE small model result mask
-
-                
-
-                ### END
-
-                dice_small = dice_coefficient(mask, binary_mask)
-                small_model_mask = mask
-                if visualiztion:
-                    print ('DICE:',dice_small)
-                    plt.imshow(blended_image)
-                    plt.show()
-        except:
-            print ("error:",image_path)
-        
-        
-        #####
-        
-
-        
-        save_folder = data_json['image'][0].split("/")[-1].split(".")[0]
-        if not os.path.exists(sam_road_dir+save_folder):
-            os.makedirs(sam_road_dir+save_folder)
-        
-        
-        gt_final_path = sam_road_dir+save_folder+"/"+datetime.now().strftime('%Y%m%d%H%M%S%f')+"_gt.jpg"
-        
-        mask_small_final_path = sam_road_dir+save_folder+"/small_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
-        mask_sam_final_path = sam_road_dir+save_folder+"/sam_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
-        mask_sam_combine_final_path = sam_road_dir+save_folder+"/sam_com_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
-
-        try:
-            cv2.imwrite(gt_final_path, binary_mask)
-            cv2.imwrite(mask_small_final_path, small_model_mask)
-            cv2.imwrite(mask_sam_final_path, road_mask_spacenet)
-            cv2.imwrite(mask_sam_combine_final_path, sam_combine_mask)
-
-
-        except:
-            # Convert boolean mask to uint8 (0s and 255s)
-            binary_gt_mask = np.uint8(binary_mask) * 255
-            binary_sam_mask = np.uint8(road_mask_spacenet) * 255
-            binary_small__mask = np.uint8(small_model_mask) * 255
-            binary_sam_com__mask = np.uint8(sam_combine_mask) * 255
-
-            # Save the binary mask as an image            
-            cv2.imwrite(gt_final_path, binary_gt_mask)
-            cv2.imwrite(mask_small_final_path, binary_small__mask)
-            cv2.imwrite(mask_sam_final_path, binary_sam_mask)
-            cv2.imwrite(mask_sam_combine_final_path, binary_sam_com__mask)
-        #########
-        
-        image_path_list.append(data_json['image'][0])
-        dice_small_list.append(dice_small)
-        dice_sam_list.append(dice_SAM)
-        dice_sam_combine_list.append(dice_sam_com)
-        
-        mask_gt_list.append(gt_final_path)
-        mask_small_list.append(mask_small_final_path)
-        mask_sam_list.append(mask_sam_final_path)
-        mask_sam_combine_list.append(mask_sam_combine_final_path)
-        
-        new_row = {"image_path": data_json['image'][0], 
-               "class": 'ROAD',
-               "dice_small": dice_small, 
-               "dice_sam": dice_SAM, 
-               "dice_sam_com": dice_sam_com, 
-               "small_path":mask_small_final_path, 
-               "sam_path":mask_sam_final_path, 
-               "sam_combine_path":mask_sam_combine_final_path, 
-               "gt_path":gt_final_path}
-        save_df = save_df.append(new_row, ignore_index=True)
+                print ('combined_mask_small single')
+                mask, blended_image = road_ex.road_extraction(local_image_path)
+                plt.imshow(blended_image)
+                plt.show()
     
-    save_df.to_csv(sam_road_dir+'output.csv', index=False)
-    return sam_road_dir+'output.csv', save_df
-
-
+    df.to_csv(sam_box_dir+'output.csv', index=False)
+    return df
                 
 
 if __name__ == "__main__":
