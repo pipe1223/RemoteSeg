@@ -9,6 +9,7 @@ import sam_box.SAM_box as sam
 
 import road_extract.road_extraction as road_ex
 
+from skimage import segmentation
 import matplotlib.pyplot as plt
 import cv2
 
@@ -18,6 +19,13 @@ import pandas as pd
 from shapely.geometry import Polygon, MultiPolygon
 from datetime import datetime
 import os
+
+import base64
+import pickle
+import shapely
+import rasterio
+from rasterio.features import geometry_mask
+
 #data clearning
 
 def resize_to_square_and_pad(image_source, scale):
@@ -289,6 +297,21 @@ def read_detection_json(json_path):
 
 #     return polygons, segmentations
 
+def open_image_with_nothing(file_path):
+    extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp']
+    data_paths = ['/goss/Datasets/', '/home/oss/Datasets/']
+    final_path = ''
+    
+    for ext in extensions:
+        for data_path in data_paths:
+            if file_path.endswith(ext):
+                local_image_path = data_path+ file_path
+            else:
+                local_image_path = data_path+ file_path + ext
+            final_path = local_image_path
+            if os.path.exists(local_image_path):
+                return local_image_path
+                
 def create_sub_masks(mask_image, width, height):
     # Initialize a dictionary of sub-masks indexed by RGB colors
     sub_masks = {}
@@ -357,6 +380,101 @@ def create_sub_mask_annotation(sub_mask):
     return polygons, segmentations
 
 
+# Function to display the segmentation mask overlay on an axis
+def show_mask(mask, ax, random_color=False):
+    if random_color:
+        # Generate a random color with alpha transparency
+        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    else:
+        # Default color (light blue) with alpha transparency
+        color = np.array([30/255, 144/255, 255/255, 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    ax.imshow(mask_image)
+    return mask_image
+
+# Function to display key points on the image
+def show_points(coords, labels, ax, marker_size=375):
+    pos_points = coords[labels == 1]  # Positive points
+    neg_points = coords[labels == 0]  # Negative points
+    ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='*', s=marker_size, edgecolor='white', linewidth=1.25)
+    ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='*', s=marker_size, edgecolor='white', linewidth=1.25)
+
+# Function to display a bounding box on the image
+def show_box(box, ax):
+    x0, y0 = box[0], box[1]  # Top-left corner
+    w, h = box[2] - box[0], box[3] - box[1]  # Width and height
+    ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2))
+
+def parse_coord(coord):
+    # Remove any trailing parentheses or unwanted characters
+    coord = coord.strip(")")
+    coord = coord.strip("(")
+    # Split into x and y components and convert to float
+    return tuple(map(float, coord.split()))
+    
+# segmentation multipolygon to box
+def multipolygon_to_box(obj):
+                         
+    coords_str = str(obj).replace("MULTIPOLYGON (((", "").replace(")))", "")
+    # Split into individual coordinate pairs
+    coords_list = coords_str.split(", ")
+
+    # Parse coordinates into a list of (x, y) tuples
+    #coords = [tuple(map(int, coord.split())) for coord in coords_list]
+    #coords = [tuple(map(float, coord.split())) for coord in coords_list]
+    coords = [parse_coord(coord) for coord in coords_list]
+    
+    # Find min and max x and y values
+    min_x = min(coord[0] for coord in coords)
+    max_x = max(coord[0] for coord in coords)
+    min_y = min(coord[1] for coord in coords)
+    max_y = max(coord[1] for coord in coords)
+
+    # Define the bounding box
+    bounding_box = [min_x,min_y,max_x,max_y]
+    return bounding_box
+
+# Converts a polygon to a binary mask
+def polygon_to_mask(polygon, image_height, image_width):
+    mask = np.zeros((image_height, image_width), dtype=np.uint8)
+    rle = maskUtils.frPyObjects(polygon, image_height, image_width)  # Generate RLE mask
+    mask = maskUtils.decode(rle)  # Decode RLE to binary mask
+    return mask
+
+def poly_sting_to_multi_polygon(poly_string):
+    pickled_bytes = base64.b64decode(poly_string.encode("utf-8"))
+    obj = pickle.loads(pickled_bytes)
+    return obj
+
+def multi_polygon_to_mask(multi_polygon,height,width):
+    height, width = height, width  
+    transform = rasterio.transform.from_origin(0, height, 1, 1)  
+
+    mask = geometry_mask(
+        [multi_polygon], 
+        transform=transform, 
+        out_shape=(height, width), 
+        invert=True  
+    )
+    return mask
+
+def str_poly_to_mask(polygon, image_height, image_width):
+    multi_poly = poly_sting_to_multi_polygon(polygon)
+    mask = multi_polygon_to_mask(multi_poly,image_height, image_width)
+    mask = np.flip(mask, axis=0) ##dont know why the result from rasterio is not correct so need to flip
+    return mask
+    
+
+# Calculates the Dice coefficient between two masks (a measure of similarity)
+def dice_coefficient(mask1, mask2):
+    mask1 = mask1 > 0  # Convert to binary
+    mask2 = mask2 > 0
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    dice = 2. * intersection / (intersection + union)  # Avoid division by zero
+    return dice
+    
 def generate_segmentation(args):
 
     #create df
@@ -395,9 +513,9 @@ def generate_segmentation(args):
     # Create an empty DataFrame with the specified columns
     save_df = pd.DataFrame(columns=columns)
     
-    dataset_name = 'tester_road'
-    file_testing_name = 'tester_road'
-    sam_road_dir = "/home/datadisk/pipe/results/sam_road/"+dataset_name+"/"+file_testing_name+"/"
+    dataset_name = 'dataset_name'
+    file_testing_name = 'file_testing_name'
+    sam_road_dir = "/home/datadisk/pipe/results/sam_road/"+datetime.now().strftime('%Y%m%d%H%M%S%f')+"/"+dataset_name+"/"+file_testing_name+"/"
     
     for data_json in data_jsons:
         ##NEED remove
@@ -572,6 +690,30 @@ def generate_segmentation(args):
                     print ('DICE:',dice_small)
                     plt.imshow(blended_image)
                     plt.show()
+
+                ###SAM+SUPERPIXEL
+                image_sourceCopy = image_source.copy()
+                slic_image = segmentation.slic(image_sourceCopy, n_segments=int(image_sourceCopy.shape[0]*image_sourceCopy.shape[1]/10), compactness=20, max_num_iter=10, start_label=1)
+
+                super_th = 0
+                _, mask_image = cv2.threshold(road_mask_spacenet, super_th, 255, cv2.THRESH_BINARY)
+                
+                modified_mask = np.zeros_like(mask_image)
+                # Iterate over each unique superpixel label
+                for label in np.unique(slic_image):
+                    # Create a mask for the current superpixel
+                    superpixel_mask = slic_image == label
+                
+                    # Check if any pixel in the superpixel is masked in the original mask
+                    if np.any(mask_image[superpixel_mask] == 255):
+                        # Set all pixels in the superpixel to 255 in the modified mask
+                        modified_mask[superpixel_mask] = 255
+
+
+                
+                dice_super = dice_coefficient(modified_mask, binary_mask)
+
+        
         except:
             print ("error:",image_path)
         
@@ -588,14 +730,16 @@ def generate_segmentation(args):
         gt_final_path = sam_road_dir+save_folder+"/"+datetime.now().strftime('%Y%m%d%H%M%S%f')+"_gt.jpg"
         
         mask_small_final_path = sam_road_dir+save_folder+"/small_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
-        mask_sam_final_path = sam_road_dir+save_folder+"/sam_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
+        mask_sam_final_path = sam_road_dir+save_folder+"/sam_T10_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
         mask_sam_combine_final_path = sam_road_dir+save_folder+"/sam_com_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
+        mask_sam_super_final_path = sam_road_dir+save_folder+"/sam_super_T"+str(super_th)+"_"+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
 
         try:
             cv2.imwrite(gt_final_path, binary_mask)
             cv2.imwrite(mask_small_final_path, small_model_mask)
             cv2.imwrite(mask_sam_final_path, road_mask_spacenet)
             cv2.imwrite(mask_sam_combine_final_path, sam_combine_mask)
+            cv2.imwrite(mask_sam_super_final_path, modified_mask)
 
 
         except:
@@ -610,6 +754,7 @@ def generate_segmentation(args):
             cv2.imwrite(mask_small_final_path, binary_small__mask)
             cv2.imwrite(mask_sam_final_path, binary_sam_mask)
             cv2.imwrite(mask_sam_combine_final_path, binary_sam_com__mask)
+            cv2.imwrite(mask_sam_super_final_path, modified_mask)
         #########
         
         image_path_list.append(data_json['image'][0])
@@ -627,9 +772,11 @@ def generate_segmentation(args):
                "dice_small": dice_small, 
                "dice_sam": dice_SAM, 
                "dice_sam_com": dice_sam_com, 
+               "dice_super":dice_super,
                "small_path":mask_small_final_path, 
                "sam_path":mask_sam_final_path, 
                "sam_combine_path":mask_sam_combine_final_path, 
+               "sam_super_path":mask_sam_super_final_path,
                "gt_path":gt_final_path}
         save_df = save_df.append(new_row, ignore_index=True)
     
