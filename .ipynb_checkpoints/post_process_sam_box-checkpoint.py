@@ -27,7 +27,7 @@ def dice_coefficient(mask1, mask2):
     dice = 2. * intersection / (intersection + union)  # Avoid division by zero
     return dice
 
-def perfrom_postprocess(df_path = "/datadisk/pipe/results/sam_box/20250402114250408401/toy_set/Annotations_val/output.csv"):
+def perfrom_postprocess(df_path):
     df = pd.read_csv(df_path)#'/home/datadisk/pipe/results/sam_box/output.csv')
     
     df['area'] = df['roi'].apply(
@@ -69,7 +69,21 @@ def perfrom_postprocess(df_path = "/datadisk/pipe/results/sam_box/20250402114250
         cv2.imwrite(post_final_path, post_mask)
 
     df.to_csv(csv_path+'output.csv', index=False)
-    #save df
+    return csv_path+'output.csv'
+
+if __name__ == "__main__":
 
 
-perfrom_postprocess()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv_path", type=str, default="/datadisk/pipe/results/sam_box/20250402114250408401/toy_set/Annotations_val/output.csv")
+
+
+    args = parser.parse_args()
+
+    # Use the parsed arguments
+
+    print (perfrom_postprocess(args.csv_path))
+
+    
+
