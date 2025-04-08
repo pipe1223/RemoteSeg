@@ -15,14 +15,14 @@ git clone https://github.com/pipe1223/RemoteSeg.git
 cd RemoteSeg
 ```
 
-2. Install the Segment Anything Model (SAM):
+2. Install the required dependencies:
 ```bash
-pip install git+https://github.com/facebookresearch/segment-anything.git
+conda env create -f environment.yml
 ```
 
-3. Install the required dependencies:
+3. Install the Segment Anything Model (SAM):
 ```bash
-pip install -r requirements.txt
+pip install git+https://github.com/facebookresearch/segment-anything.git
 ```
 
 ## Usage
