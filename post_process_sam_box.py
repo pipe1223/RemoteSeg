@@ -72,9 +72,6 @@ def perfrom_postprocess(df_path):
     return csv_path+'output.csv'
 
 if __name__ == "__main__":
-
-
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv_path", type=str, default="/datadisk/pipe/results/sam_box/20250402114250408401/toy_set/Annotations_val/output.csv")
 
