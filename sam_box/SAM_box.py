@@ -634,7 +634,6 @@ def sementation_json(json_path, sam_checkpoint='/home/datadisk/evaluation/models
 
     return image_source, main_image, gt_image, dice_list, box_list, roi_mask_list
 
-
 # Main function to execute segmentation based on user inputs
 def sementation_call(data_list, data_path, sam_checkpoint='/home/datadisk/evaluation/models/SAM/sam_vit_h_4b8939.pth'):
     DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

@@ -54,14 +54,12 @@ def perfrom_postprocess(df_path):
         gt_mask = cv2.imread(gtp)
         mask = cv2.imread(row['path'])
         post_mask = post_process.post_process(mask,row['area'],row['class'])
-
-        post_final_path = post_box_dir+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
         
-
+        post_final_path = post_box_dir+datetime.now().strftime('%Y%m%d%H%M%S%f')+".jpg"
         
         # calculate dice
         #save post_mask result
-
+        
         df.iloc[index, df.columns.get_loc('post_dice')] = dice_coefficient(gt_mask, post_mask)
         df.iloc[index, df.columns.get_loc('post_path')] = post_final_path
 
